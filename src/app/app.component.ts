@@ -1,6 +1,7 @@
 import { Component, OnInit } from '@angular/core';
 import { ObstacleService } from './obstacle.service';
 import { Chart, registerables } from 'chart.js';
+import emailjs from 'emailjs-com';
 
 @Component({
   selector: 'app-root',
@@ -38,8 +39,11 @@ export class AppComponent implements OnInit {
     setInterval(() => this.fetchDistance(), 15000); // every 1.5 sec
   }
   
+  noMovementAlertSent = false;
+
   fetchDistance() {
     this.obstacleService.getDistance().subscribe(data => {
+      
       this.previousDistance = this.distance;
       this.distance = data;
 
@@ -80,6 +84,30 @@ export class AppComponent implements OnInit {
     }, error => {
       console.error('Error fetching distance:', error);
     });
+
+    if (this.checkNoMovement()) {
+      if (!this.noMovementAlertSent) {
+        this.noMovementAlertSent = true;
+        this.sendNoMovementEmailAlert();
+      }
+    } else {
+      this.noMovementAlertSent = false;
+    }
+
+  }
+
+  sendNoMovementEmailAlert() {
+    this.sendEmailAlert();
+  }
+
+
+  sendEmailAlert() {
+    emailjs.send('service_x3ihvek', 'template_5t4a1vt', {
+      message: 'No movement detected for 5 minutes.',
+      to_email: 'filipposmertz@gmail.com',
+    }, 'tDSRiY4fLc8E0wGGZ')
+    .then(() => console.log('Email sent!'))
+    .catch(err => console.error('Email error:', err));
   }
 
   // Audio alert system
@@ -241,5 +269,16 @@ getWaveform(zone: string): OscillatorType {
     } else if (this.distance < this.warningThreshold) {
       this.startOrUpdateBeeping();
     }
+  }
+
+  checkNoMovement(thresholdCount = 20, tolerance = 5): boolean {
+    if (this.distances.length < thresholdCount) return false;
+  
+    // Get the last 'thresholdCount' distances
+    const recentDistances = this.distances.slice(-thresholdCount);
+  
+    // Check if all values are approximately equal (within tolerance)
+    const first = recentDistances[0];
+    return recentDistances.every(d => Math.abs(d - first) <= tolerance);
   }
 }
