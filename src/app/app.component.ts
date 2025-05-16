@@ -1,6 +1,6 @@
 import { Component, OnInit } from '@angular/core';
 import { ObstacleService } from './obstacle.service';
-import { Chart } from 'chart.js';
+import { Chart, registerables } from 'chart.js';
 
 @Component({
   selector: 'app-root',
@@ -10,71 +10,201 @@ import { Chart } from 'chart.js';
 })
 export class AppComponent implements OnInit {
   distance: number = 0;
-  warningThreshold = 30;
+  previousDistance: number = 0;
+  wasInDanger: boolean = false;
+
+
+  warningThreshold = 300; // in cm
+  cautionThreshold = 150;
+  criticalThreshold = 50;
+  isAudioMuted = false;
+
+  distances: number[] = [];
+  timeLabels: string[] = [];
   chart: any;
-  distances: number[] = []; // Array to store distance values for chart
-  timeLabels: string[] = []; // Labels for time, can be timestamps or other identifiers
+
+  // Audio
+  audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  oscillator: OscillatorNode | null = null;
+  gainNode: GainNode | null = null;
+  beepingInterval: any = null;
 
   constructor(private obstacleService: ObstacleService) {}
 
   ngOnInit() {
-    this.fetchDistance();
-    setInterval(() => this.fetchDistance(), 3000); // every 3 seconds
-
-    // Initialize the chart
+    Chart.register(...registerables);
     this.initializeChart();
+    this.fetchDistance();
+    setInterval(() => this.fetchDistance(), 15000); // every 1.5 sec
   }
-
-  speak(text: string) {
-    const utterance = new SpeechSynthesisUtterance(text);
-    speechSynthesis.cancel(); // stop previous speech
-    speechSynthesis.speak(utterance);
-  }
-
-  wasInDanger = false;
-
+  
   fetchDistance() {
     this.obstacleService.getDistance().subscribe(data => {
+      this.previousDistance = this.distance;
       this.distance = data;
-      this.distances.push(this.distance); // Add the latest distance to chart data
-      this.timeLabels.push(new Date().toLocaleTimeString()); // Add timestamp as label
-      
-      // Limit the length of the data arrays for performance
-      if (this.distances.length > 30) {
+
+      this.distances.push(this.distance);
+      this.timeLabels.push(new Date().toLocaleTimeString());
+
+      if (this.distances.length > 100) {
         this.distances.shift();
         this.timeLabels.shift();
       }
 
-      // Update chart with new data
       this.updateChart();
 
       const inDanger = this.distance < this.warningThreshold;
-      if (inDanger && !this.wasInDanger) {
-        this.speak(`Watch out! There is an obstacle at ${this.distance} centimeters.`);
-        console.log(`Obstacle detected at ${this.distance} cm`);
-      } else if (!inDanger && this.wasInDanger) {
-        this.speak(`Safe distance: ${this.distance} centimeters.`);
-        console.log(`Safe distance: ${this.distance} cm`);
+
+      if (inDanger && !this.isAudioMuted) {
+        this.startOrUpdateBeeping();
+      } else {
+        this.stopBeeping();
+      }
+
+      // Looming detection
+      const delta = this.previousDistance - this.distance;
+      if (delta > 30) {
+        this.speak("Rapid approach detected!");
+      }
+
+      // Clear path confirmation
+      if (!inDanger && this.wasInDanger) {
+        setTimeout(() => {
+          if (this.distance >= this.warningThreshold) {
+            this.speak("Safe distance.");
+          }
+        }, 2000);
       }
 
       this.wasInDanger = inDanger;
+    }, error => {
+      console.error('Error fetching distance:', error);
     });
   }
 
-  // Initialize the chart
+  // Audio alert system
+  startOrUpdateBeeping() {
+    if (this.beepingInterval) return;
+
+    const beep = () => {
+      if (this.isAudioMuted) return;
+
+      const zone = this.getDangerZone();
+      const frequency = this.calculatePitch(zone);
+      const interval = this.calculateBeepInterval(zone);
+      const waveform = this.getWaveform(zone);
+
+      this.playBeep(frequency, waveform);
+      this.stopBeepAfter(0.2); // seconds
+
+      this.beepingInterval = setTimeout(() => {
+        this.beepingInterval = null;
+        this.startOrUpdateBeeping();
+      }, interval);
+    };
+
+    beep();
+  }
+
+  stopBeeping() {
+    if (this.beepingInterval) {
+      clearTimeout(this.beepingInterval);
+      this.beepingInterval = null;
+    }
+    this.stopBeep();
+  }
+
+  playBeep(frequency: number, type: OscillatorType) {
+  this.oscillator = this.audioCtx.createOscillator();
+  this.gainNode = this.audioCtx.createGain();
+
+  this.oscillator.type = type;
+  this.oscillator.frequency.value = frequency;
+
+  const now = this.audioCtx.currentTime;
+  const duration = 0.4; // seconds
+
+  // Set up soft fade-in and fade-out
+  this.gainNode.gain.setValueAtTime(0, now);
+  this.gainNode.gain.linearRampToValueAtTime(0.15, now + 0.05); // fade in
+  this.gainNode.gain.linearRampToValueAtTime(0, now + duration); // fade out
+
+  this.oscillator.connect(this.gainNode);
+  this.gainNode.connect(this.audioCtx.destination);
+
+  this.oscillator.start(now);
+  this.oscillator.stop(now + duration);
+}
+
+stopBeepAfter(duration: number) {
+  if (this.oscillator) {
+    this.oscillator.stop(this.audioCtx.currentTime + duration);
+  }
+}
+
+stopBeep() {
+  if (this.oscillator) {
+    try {
+      this.oscillator.stop();
+      this.oscillator.disconnect();
+    } catch (_) {}
+  }
+  if (this.gainNode) {
+    this.gainNode.disconnect();
+  }
+}
+
+getDangerZone(): 'caution' | 'warning' | 'critical' {
+  if (this.distance < this.criticalThreshold) return 'critical';
+  if (this.distance < this.cautionThreshold) return 'warning';
+  return 'caution';
+}
+
+calculatePitch(zone: string): number {
+  switch (zone) {
+    case 'critical': return 600;   
+    case 'warning': return 450;    
+    case 'caution': return 300;    
+    default: return 250;
+  }
+}
+
+calculateBeepInterval(zone: string): number {
+  switch (zone) {
+    case 'critical': return 500;   
+    case 'warning': return 1000;
+    case 'caution': return 2000;
+    default: return 3000;
+  }
+}
+
+getWaveform(zone: string): OscillatorType {
+  switch (zone) {
+    case 'critical': return 'triangle';   
+    case 'warning': return 'sine';       
+    case 'caution': return 'sine';       
+    default: return 'sine';
+  }
+}
+
+  speak(text: string) {
+    const utterance = new SpeechSynthesisUtterance(text);
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+  }
+
+  // Chart setup
   initializeChart() {
     this.chart = new Chart('distanceChart', {
       type: 'line',
       data: {
         labels: this.timeLabels,
-        datasets: [
-          {
-            label: 'Distance (cm)',
-            data: this.distances,
-            borderColor: 'rgba(75, 192, 192, 1)',
-            fill: false
-          }
-        ]
+        datasets: [{
+          label: 'Distance (cm)',
+          data: this.distances,
+          borderColor: 'rgba(75, 192, 192, 1)',
+          fill: false
+        }]
       },
       options: {
         scales: {
@@ -82,7 +212,7 @@ export class AppComponent implements OnInit {
           x: {
             ticks: {
               autoSkip: true,
-              maxTicksLimit: 10
+              maxTicksLimit: 100
             }
           }
         }
@@ -90,10 +220,26 @@ export class AppComponent implements OnInit {
     });
   }
 
-  // Update the chart with new data
   updateChart() {
-    this.chart.data.labels = this.timeLabels;
-    this.chart.data.datasets[0].data = this.distances;
+    if (!this.chart) return;
+    this.chart.data.labels = [...this.timeLabels];
+    this.chart.data.datasets[0].data = [...this.distances];
     this.chart.update();
+  }
+
+  // UI logic (bind to class)
+  getAlertSeverityClass(): string {
+    if (this.distance < this.criticalThreshold) return 'alert-critical';
+    if (this.distance < this.cautionThreshold) return 'alert-warning';
+    return 'alert-caution';
+  }
+
+  toggleMute() {
+    this.isAudioMuted = !this.isAudioMuted;
+    if (this.isAudioMuted) {
+      this.stopBeeping();
+    } else if (this.distance < this.warningThreshold) {
+      this.startOrUpdateBeeping();
+    }
   }
 }
