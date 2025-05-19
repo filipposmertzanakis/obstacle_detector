@@ -4,7 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { map, tap } from 'rxjs/operators';
 
 interface DistanceResponse {
-  feeds: { field1: string }[]; // Array of feeds containing field1 as a string
+  feeds: { field1: string }[]; 
 }
 
 @Injectable({
@@ -15,14 +15,13 @@ export class ObstacleService {
 
   constructor(private httpClient: HttpClient) {}
 
-  // Fetching the distance data from the API
+  // παιρνω τα δεδομενα απο το thingspeak μεσω του write api key
   getDistance(): Observable<number> {
     return this.httpClient.get<DistanceResponse>(this.apiUrl).pipe(
-      tap(response => console.log('API Response:', response)), // Log the full response for debugging
       map(response => {
-        // Access the last feed and convert field1 to a number
+        // αποθηκευω την τελευταια μετρηση
         const lastFeed = response.feeds[response.feeds.length - 1];
-        return lastFeed ? parseFloat(lastFeed.field1) : 0; // Return 0 if no feed is available
+        return lastFeed ? parseFloat(lastFeed.field1) : 0; // εαν δεν υπαρχει γυρναω 0 
       })
     );
   }

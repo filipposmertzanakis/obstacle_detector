@@ -15,7 +15,7 @@ export class AppComponent implements OnInit {
   wasInDanger: boolean = false;
 
 
-  warningThreshold = 300; // in cm
+  warningThreshold = 300; // σε cm
   cautionThreshold = 150;
   criticalThreshold = 50;
   isAudioMuted = false;
@@ -24,7 +24,7 @@ export class AppComponent implements OnInit {
   timeLabels: string[] = [];
   chart: any;
 
-  // Audio
+  // ηχος
   audioCtx = new (window.AudioContext || (window as any).webkitAudioContext)();
   oscillator: OscillatorNode | null = null;
   gainNode: GainNode | null = null;
@@ -36,7 +36,7 @@ export class AppComponent implements OnInit {
     Chart.register(...registerables);
     this.initializeChart();
     this.fetchDistance();
-    setInterval(() => this.fetchDistance(), 15000); // every 1.5 sec
+    setInterval(() => this.fetchDistance(), 15000); // καθε 15 δευτερολεπτα ωστε να ειναι on sync με το thinkspeak
   }
   
   noMovementAlertSent = false;
@@ -65,13 +65,13 @@ export class AppComponent implements OnInit {
         this.stopBeeping();
       }
 
-      // Looming detection
+      // αποτομο approach 
       const delta = this.previousDistance - this.distance;
       if (delta > 30) {
         this.speak("Rapid approach detected!");
       }
 
-      // Clear path confirmation
+      // επιβεβαιωση οτι δεν ειναι σε κινδυνο
       if (!inDanger && this.wasInDanger) {
         setTimeout(() => {
           if (this.distance >= this.warningThreshold) {
@@ -110,7 +110,7 @@ export class AppComponent implements OnInit {
     .catch(err => console.error('Email error:', err));
   }
 
-  // Audio alert system
+  // το αλερτ
   startOrUpdateBeeping() {
     if (this.beepingInterval) return;
 
@@ -123,7 +123,7 @@ export class AppComponent implements OnInit {
       const waveform = this.getWaveform(zone);
 
       this.playBeep(frequency, waveform);
-      this.stopBeepAfter(0.2); // seconds
+      this.stopBeepAfter(0.2); 
 
       this.beepingInterval = setTimeout(() => {
         this.beepingInterval = null;
@@ -150,9 +150,9 @@ export class AppComponent implements OnInit {
   this.oscillator.frequency.value = frequency;
 
   const now = this.audioCtx.currentTime;
-  const duration = 0.4; // seconds
+  const duration = 0.4; 
 
-  // Set up soft fade-in and fade-out
+  // fade in and out
   this.gainNode.gain.setValueAtTime(0, now);
   this.gainNode.gain.linearRampToValueAtTime(0.15, now + 0.05); // fade in
   this.gainNode.gain.linearRampToValueAtTime(0, now + duration); // fade out
@@ -255,7 +255,7 @@ getWaveform(zone: string): OscillatorType {
     this.chart.update();
   }
 
-  // UI logic (bind to class)
+
   getAlertSeverityClass(): string {
     if (this.distance < this.criticalThreshold) return 'alert-critical';
     if (this.distance < this.cautionThreshold) return 'alert-warning';
@@ -274,10 +274,9 @@ getWaveform(zone: string): OscillatorType {
   checkNoMovement(thresholdCount = 20, tolerance = 5): boolean {
     if (this.distances.length < thresholdCount) return false;
   
-    // Get the last 'thresholdCount' distances
+
     const recentDistances = this.distances.slice(-thresholdCount);
-  
-    // Check if all values are approximately equal (within tolerance)
+
     const first = recentDistances[0];
     return recentDistances.every(d => Math.abs(d - first) <= tolerance);
   }
